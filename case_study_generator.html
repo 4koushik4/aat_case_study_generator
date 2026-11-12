@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Case Study Report Generator</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  .paper { font-family: 'Times New Roman', Times, serif; font-size: 12pt; line-height: 1.35; color: #000; background: #fff; }
+  .paper h2 { font-size: 13pt; font-weight: bold; margin: 10px 0 4px; }
+  .paper h3 { font-size: 12.5pt; font-weight: bold; margin: 10px 0 4px; }
+  .paper p { margin: 3px 0 6px; text-align: justify; }
+  .paper ol, .paper ul { margin: 2px 0 6px 26px; }
+  .paper ol { list-style: decimal; } .paper ul { list-style: disc; }
+  .paper li { margin: 2px 0; text-align: justify; }
+  .cs { margin-bottom: 24px; }
+  .editing [contenteditable] { outline: 1px dashed #cbd5e1; outline-offset: 4px; border-radius: 2px; }
+  .editing [contenteditable]:focus { outline: 2px solid #6366f1; }
+  .qcard textarea { resize: none; overflow: hidden; }
+</style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+<div class="max-w-5xl mx-auto p-4 md:p-8 space-y-6">
+
+  <header class="bg-white rounded-xl p-6 border border-slate-200">
+    <h1 class="text-2xl font-bold">Case study report generator</h1>
+    <p class="text-sm text-slate-500 mt-1">Paste a case study question, generate the full report (Scenario, Context, Challenges, Questions and Answers) with Groq, edit it here, then download as Word or PDF.</p>
+    <div class="grid md:grid-cols-2 gap-4 mt-5">
+      <label class="text-sm font-medium">Groq API key
+        <input id="apiKey" type="password" autocomplete="off" placeholder="gsk_..." class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+        <span class="block text-xs font-normal text-slate-400 mt-1">Stored only in this browser. Get a key at console.groq.com.</span>
+      </label>
+      <label class="text-sm font-medium">Model
+        <input id="model" value="qwen/qwen3.8-27b" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+      </label>
+      <label class="text-sm font-medium">College
+        <input id="college" value="Institute of Aeronautical Engineering" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+      </label>
+      <label class="text-sm font-medium">Course (code in brackets)
+        <input id="course" value="NATURAL LANGUAGE PROCESSING (AITD11)" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+      </label>
+      <label class="text-sm font-medium">Student name and roll number
+        <input id="student" value="J. Bhavani Koushik (23951A051E)" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+      </label>
+      <label class="text-sm font-medium">Branch
+        <input id="branch" value="Computer Science and Engineering" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+      </label>
+      <label class="text-sm font-medium">Assessment name
+        <input id="aat" value="AAT – II" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+      </label>
+      <label class="text-sm font-medium">Report type line
+        <input id="rtype" value="A CASE STUDY REPORT OF" class="mt-1 w-full px-3 py-2 border border-slate-300 rounded-lg text-sm">
+      </label>
+    </div>
+  </header>
+
+  <section class="bg-white rounded-xl p-6 border border-slate-200">
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+      <h2 class="text-lg font-bold">1. Case study questions <span id="qCount" class="text-sm font-normal text-slate-500"></span></h2>
+      <div class="flex gap-2 text-xs">
+        <button id="addQ" class="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg">Add case study</button>
+        <button id="sampleBtn" class="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 rounded-lg">Load sample</button>
+        <button id="clearQ" class="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg">Clear all</button>
+      </div>
+    </div>
+    <div id="qList" class="space-y-2"></div>
+    <div class="flex items-center justify-between mt-5 pt-4 border-t border-slate-100">
+      <div id="status" class="text-sm text-slate-600" role="status"></div>
+      <button id="genBtn" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-semibold rounded-lg">Generate reports</button>
+    </div>
+  </section>
+
+  <section class="bg-white rounded-xl p-6 border border-slate-200">
+    <h2 class="text-lg font-bold mb-3">2. Edit and download</h2>
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4 pb-4 border-b border-slate-200">
+      <div id="fmtBar" class="flex flex-wrap gap-1 text-sm">
+        <button data-cmd="bold" class="px-3 py-1.5 border border-slate-300 rounded-lg font-bold">B</button>
+        <button data-cmd="italic" class="px-3 py-1.5 border border-slate-300 rounded-lg italic">I</button>
+        <button data-cmd="underline" class="px-3 py-1.5 border border-slate-300 rounded-lg underline">U</button>
+        <button data-cmd="insertUnorderedList" class="px-3 py-1.5 border border-slate-300 rounded-lg">Bullets</button>
+        <button data-cmd="insertOrderedList" class="px-3 py-1.5 border border-slate-300 rounded-lg">Numbers</button>
+        <button data-cmd="undo" class="px-3 py-1.5 border border-slate-300 rounded-lg">Undo</button>
+        <button data-cmd="redo" class="px-3 py-1.5 border border-slate-300 rounded-lg">Redo</button>
+      </div>
+      <div class="flex gap-2">
+        <button id="docxBtn" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg">Download Word</button>
+        <button id="pdfBtn" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-sm font-medium rounded-lg">Download PDF</button>
+      </div>
+    </div>
+    <p class="text-xs text-slate-500 mb-3">Click any text to edit it. Page 1 is the cover and each case study starts on a new page. The PDF is built as real text (selectable and small), with a navy border on every page.</p>
+    <div id="paper" class="paper p-8 border border-slate-200 editing">
+      <div id="cover" style="text-align:center"></div>
+      <div id="qa"><p style="color:#94a3b8;text-align:center;font-style:italic">Reports will appear here.</p></div>
+    </div>
+  </section>
+</div>
+
+<script>
+const SAMPLE = ["Case Study: A retailer deploys sentiment analysis across different product categories. Analyze the main technical challenges in supervised sentiment classification and model monitoring. Explain how errors at each stage could affect the final application."];
+const LOGO_URL = "https://image-static.collegedunia.com/public/college_data/images/logos/1779862754download45.jpg";
+const NAVY = '#10284d', NAVY_RGB = [16, 40, 77];
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const setStatus = t => { $('status').textContent = t; };
+
+/* ---------- Groq ---------- */
+const stripThink = t => String(t || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/^[\s\S]*<\/think>/i, '').trim();
+async function chat(content) {
+  const key = $('apiKey').value.trim();
+  if (!key) throw new Error('Enter your Groq API key first.');
+  const body = JSON.stringify({ model: $('model').value.trim() || 'qwen/qwen3.8-27b', temperature: 0.4, max_completion_tokens: 8000, messages: [{ role: 'user', content }] });
+  for (let t = 1; t <= 3; t++) {
+    let r;
+    try { r = await fetch(GROQ_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + key }, body }); }
+    catch (e) { throw new Error('Could not reach api.groq.com. Check your connection or turn off ad-blockers/VPN.'); }
+    if (r.ok) {
+      const d = await r.json(), txt = stripThink(d.choices?.[0]?.message?.content);
+      if (!txt) throw new Error('Empty response from the model. Try again.');
+      return txt;
+    }
+    if ((r.status === 429 || r.status >= 500) && t < 3) { await sleep(2000 * t); continue; }
+    let msg = 'Request failed (' + r.status + ')';
+    try { msg = (await r.json()).error?.message || msg; } catch (e) {}
+    if (r.status === 401) msg = 'Invalid Groq API key.';
+    throw new Error(msg);
+  }
+}
+
+/* ---------- Case study input cards ---------- */
+const grow = ta => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; };
+function renumber() {
+  const cards = document.querySelectorAll('#qList .qcard');
+  cards.forEach((c, i) => { c.querySelector('.num').textContent = 'C' + (i + 1); });
+  $('qCount').textContent = cards.length ? `(${cards.length})` : '';
+  if (!cards.length) $('qList').innerHTML = '<p class="text-sm text-slate-400 italic">No case studies yet. Add one or load the sample.</p>';
+}
+function addQuestion(text = '', focus = false) {
+  const list = $('qList');
+  if (!list.querySelector('.qcard')) list.innerHTML = '';
+  const d = document.createElement('div');
+  d.className = 'qcard flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-lg p-3';
+  d.innerHTML = `<span class="num w-8 shrink-0 pt-2 text-sm font-bold text-slate-500"></span>
+    <textarea rows="3" class="qt flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white" placeholder="Paste the case study question"></textarea>
+    <button class="del px-2 py-2 text-slate-400 hover:text-rose-600" aria-label="Delete" title="Delete">&#10005;</button>`;
+  const ta = d.querySelector('textarea');
+  ta.value = text; ta.addEventListener('input', () => grow(ta));
+  d.querySelector('.del').onclick = () => { d.remove(); renumber(); };
+  list.appendChild(d); grow(ta); renumber();
+  if (focus) ta.focus();
+}
+function setQuestions(arr) { $('qList').innerHTML = ''; arr.forEach(q => addQuestion(q)); renumber(); }
+const getQuestions = () => [...document.querySelectorAll('#qList .qt')].map(t => t.value.trim()).filter(Boolean);
+
+/* ---------- Prompt ---------- */
+function buildPrompt(q, course) {
+  return `You are writing a case study report for a university course "${course}".
+Case study question: "${q}"
+
+Write the report in clean Markdown using EXACTLY this structure and these headings:
+
+## Scenario / Problem
+<2 paragraphs (4-6 sentences each) describing the real-world situation, who is involved, the scale of the data or operation, and the core problem that arises.>
+
+## Context
+<2 paragraphs explaining the technical background (relevant concepts, methods, pipeline or architecture) and why flaws in it affect business or application outcomes.>
+
+## Challenges
+1. **<Challenge name>:** <2 sentence explanation with a concrete example>
+2. ... (exactly 5 numbered challenges)
+
+## QUESTIONS & ANSWERS:-
+Split the case study question into exactly 3 logical sub-questions that together cover every part of it. For each:
+
+### 1Q) <Sub-question written as a full question in Title Case>
+<2-3 paragraphs of academic prose (no bullet points), with concrete examples, technical terms in the answer, and explicit cause-and-effect.>
+
+(then 2Q) and 3Q) in the same format. For the final sub-question you may use a numbered list with bold labels per stage if the case asks about stages.)
+
+Rules: academic tone, no emojis, no LaTeX, no tables, no preamble or closing remarks, output only the Markdown.`;
+}
+const render = md => marked.parse(md.replace(/^```(?:markdown|md)?\n([\s\S]*?)\n```$/i, '$1').trim(), { gfm: true });
+
+/* ---------- Cover ---------- */
+let LOGO_DATA = null;
+async function loadLogo() {
+  try {
+    const b = await (await fetch(LOGO_URL, { mode: 'cors' })).blob();
+    LOGO_DATA = await new Promise(res => { const f = new FileReader(); f.onload = () => res(f.result); f.readAsDataURL(b); });
+  } catch (e) {}
+  updateCover();
+}
+function updateCover() {
+  const college = ($('college').value.trim() || 'Institute of Aeronautical Engineering').toUpperCase();
+  const course = $('course').value.trim();
+  const code = course.match(/\(([^)]+)\)/)?.[1] || '';
+  const title = course.replace(/\s*\([^)]*\)\s*/g, ' ').trim().toUpperCase();
+  const stu = $('student').value.trim();
+  const name = stu.replace(/\s*\([^)]*\)\s*$/, '').trim() || stu;
+  const roll = stu.match(/\(([^)]+)\)/)?.[1] || '';
+  const L = (txt, st) => `<div contenteditable="true" spellcheck="false" style="font-family:'Times New Roman',Times,serif;font-weight:700;${st}">${esc(txt)}</div>`;
+  $('cover').innerHTML = `<div style="width:100%;max-width:660px;margin:0 auto;padding:30px 20px 40px;background:#fff;text-align:center;">
+    <img src="${LOGO_DATA || LOGO_URL}" alt="Logo" crossorigin="anonymous" style="display:block;margin:0 auto;width:260px;height:auto;">
+    ${L(college, `font-size:24pt;line-height:1.2;max-width:520px;margin:22px auto 0;color:${NAVY};`)}
+    ${L($('rtype').value.trim().toUpperCase(), 'font-size:12pt;margin-top:30px;color:#222;')}
+    ${L(title, `font-size:22pt;line-height:1.2;max-width:480px;margin:22px auto 0;color:${NAVY};`)}
+    ${code ? L('COURSE CODE: ' + code, 'font-size:12pt;margin-top:22px;color:#222;') : ''}
+    ${L('BY', 'font-size:12pt;margin-top:26px;color:#222;')}
+    ${L(name, 'font-size:13pt;margin-top:20px;color:#222;')}
+    ${roll ? L(roll, 'font-size:12pt;margin-top:14px;color:#222;') : ''}
+    ${L($('branch').value.trim().toUpperCase(), `font-size:13pt;margin-top:30px;color:${NAVY};`)}
+    ${L($('aat').value.trim(), 'font-size:16pt;margin-top:24px;color:#222;')}
+  </div>`;
+}
+
+/* ---------- Generate ---------- */
+async function fillReport(i) {
+  const box = $('cs' + i), ans = box.querySelector('.ans');
+  ans.innerHTML = '<i style="color:#64748b">Generating...</i>';
+  try { ans.innerHTML = render(await chat(buildPrompt(box.dataset.q, $('course').value))); return true; }
+  catch (e) { ans.innerHTML = `<span style="color:#be123c">Error: ${esc(e.message)}</span>`; return false; }
+}
+async function generate() {
+  if (!$('apiKey').value.trim()) { setStatus('Enter your Groq API key first.'); return; }
+  const qs = getQuestions();
+  if (!qs.length) { setStatus('Add at least one case study.'); return; }
+  try { localStorage.setItem('groq_api_key', $('apiKey').value.trim()); localStorage.setItem('groq_model', $('model').value.trim()); } catch (e) {}
+  updateCover(); $('genBtn').disabled = true;
+  $('qa').innerHTML = qs.map((q, i) => `
+    <div class="cs" id="cs${i}" data-q="${esc(q)}">
+      <h3 contenteditable="true" style="font-size:12.5pt;margin:0 0 6px">${esc(/^case study/i.test(q) ? q : 'Case Study: ' + q)}</h3>
+      <div class="ans-label"><span class="no-export"><button onclick="regen(${i})" class="text-xs px-2 py-0.5 border border-slate-300 rounded text-slate-600 hover:bg-slate-100" style="font-family:system-ui">Regenerate</button></span></div>
+      <div class="ans" contenteditable="true"><i style="color:#94a3b8">Waiting...</i></div>
+    </div>`).join('');
+  let next = 0, done = 0, failed = 0;
+  const worker = async () => { while (next < qs.length) { const i = next++; if (!(await fillReport(i))) failed++; setStatus(`Done ${++done} of ${qs.length}` + (failed ? ` (${failed} failed)` : '')); } };
+  await Promise.all([worker(), worker()]);
+  setStatus(failed ? `Finished with ${failed} failed. Use Regenerate.` : 'All reports generated. Click any text to edit it.');
+  $('genBtn').disabled = false;
+}
+async function regen(i) { setStatus(`Regenerating ${i + 1}...`); setStatus((await fillReport(i)) ? 'Regenerated.' : 'Failed.'); }
+
+/* ---------- Toolbar ---------- */
+$('fmtBar').addEventListener('mousedown', e => e.preventDefault());
+$('fmtBar').addEventListener('click', e => { const b = e.target.closest('[data-cmd]'); if (b) document.execCommand(b.dataset.cmd, false, null); });
+
+/* ---------- Export shared ---------- */
+const MARGIN_CM = 1.27, M_TW = Math.round(MARGIN_CM / 2.54 * 1440), M_MM = MARGIN_CM * 10, GAP_PT = 24, BORDER_PT = 1.5, PT = 0.3528, PX = 0.2646;
+function clean() {
+  const c = $('paper').cloneNode(true);
+  c.classList.remove('editing', 'p-8', 'border');
+  c.querySelectorAll('.no-export, button').forEach(b => b.remove());
+  c.querySelectorAll('[contenteditable]').forEach(e => e.removeAttribute('contenteditable'));
+  return c;
+}
+const fileBase = () => ($('course').value.replace(/\(.*\)/, '').trim() || 'Case_Study').replace(/[^\w]+/g, '_');
+
+/* ---------- Word ---------- */
+async function addBorder(blob) {
+  const zip = await JSZip.loadAsync(blob);
+  let xml = await zip.file('word/document.xml').async('string');
+  const b = `<w:pgBorders w:offsetFrom="page">` + ['top','left','bottom','right'].map(s => `<w:${s} w:val="single" w:sz="${BORDER_PT * 8}" w:space="${GAP_PT}" w:color="10284D"/>`).join('') + `</w:pgBorders>`;
+  zip.file('word/document.xml', xml.replace(/(<w:pgMar[^>]*\/>)/, '$1' + b));
+  return zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+}
+$('docxBtn').onclick = async () => {
+  if (!document.querySelector('#qa .cs')) { setStatus('Generate reports first.'); return; }
+  const c = clean();
+  c.querySelectorAll('.cs').forEach(q => q.setAttribute('style', 'page-break-before:always;'));
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{font-family:'Times New Roman',serif;font-size:12pt;line-height:1.4}h2,h3{font-weight:bold;page-break-after:avoid}h3{font-size:12.5pt}p{text-align:justify}li,p{page-break-inside:avoid}</style></head><body>${c.innerHTML}</body></html>`;
+  const raw = htmlDocx.asBlob(html, { margins: { top: M_TW, right: M_TW, bottom: M_TW, left: M_TW, header: 360, footer: 360, gutter: 0 } });
+  let out = raw;
+  try { out = await addBorder(raw); } catch (e) { setStatus('Word file saved without page border.'); }
+  saveAs(out, fileBase() + '_Case_Study.docx');
+};
+
+/* ---------- PDF (native text) ---------- */
+const EXTRA = '\u2018\u2019\u201a\u201c\u201d\u201e\u2022\u2026\u2013\u2014\u20ac\u2122';
+const winAnsi = s => String(s).replace(/\u00a0/g, ' ').replace(/[\u200b-\u200d\ufeff]/g, '').replace(/[\u2192\u21d2]/g, '->').replace(/\u2265/g, '>=').replace(/\u2264/g, '<=').replace(/\u2212/g, '-').replace(/[^\u0000-\u00ff]/g, ch => EXTRA.includes(ch) ? ch : '?');
+function parseColor(s) { const m = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(s || ''); if (m) return [+m[1], +m[2], +m[3]]; const h = /^#([0-9a-f]{6})$/i.exec(s || ''); if (h) { const n = parseInt(h[1], 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; } return [0, 0, 0]; }
+function logoJpeg(src, cors) {
+  return new Promise((res, rej) => {
+    const im = new Image(); if (cors) im.crossOrigin = 'anonymous';
+    const t = setTimeout(() => rej(new Error('timeout')), 8000);
+    im.onload = () => { clearTimeout(t); const k = Math.min(1, 900 / im.naturalWidth), c = document.createElement('canvas'); c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k); const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(im, 0, 0, c.width, c.height); res({ data: c.toDataURL('image/jpeg', 0.88), ratio: c.height / c.width }); };
+    im.onerror = () => { clearTimeout(t); rej(new Error('failed')); };
+    im.src = src;
+  });
+}
+
+async function buildPdf() {
+  if (!window.jspdf) throw new Error('PDF library did not load. Reload the page.');
+  if (!document.querySelector('#qa .cs')) { setStatus('Generate reports first.'); return null; }
+  const pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', compress: true });
+  const PW = 210, PH = 297, M = M_MM, CW = PW - 2 * M, BOT = PH - M, src = clean();
+  let y = M;
+  const setF = (s, z) => { pdf.setFont('times', s.b && s.i ? 'bolditalic' : s.b ? 'bold' : s.i ? 'italic' : 'normal'); pdf.setFontSize(z); };
+  const newPage = () => { pdf.addPage(); y = M; };
+
+  function collect(nodes, st, out) {
+    nodes.forEach(n => {
+      if (n.nodeType === 3) {
+        winAnsi(n.nodeValue).replace(/\s+/g, ' ').split(' ').forEach((p, i) => {
+          if (i > 0) out.ps = true;
+          if (p) { out.push({ text: p, st, sp: !!out.ps && out.length > 0 }); out.ps = false; }
+        });
+      } else if (n.nodeType === 1) {
+        if (n.tagName === 'BR') { out.push({ br: true }); out.ps = false; return; }
+        const s = { ...st }, t = n.tagName;
+        if (t === 'B' || t === 'STRONG') s.b = true;
+        if (t === 'I' || t === 'EM') s.i = true;
+        collect([...n.childNodes], s, out);
+      }
+    });
+  }
+  function layout(runs, w, z) {
+    const lines = []; let L = { it: [], w: 0 };
+    runs.forEach(r => {
+      if (r.br) { L.forced = true; lines.push(L); L = { it: [], w: 0 }; return; }
+      setF(r.st, z);
+      const ww = pdf.getTextWidth(r.text), sw = pdf.getTextWidth(' ');
+      if (L.it.length && L.w + (r.sp ? sw : 0) + ww > w) { lines.push(L); L = { it: [], w: 0 }; }
+      const g = r.sp && L.it.length ? sw : 0;
+      L.it.push({ text: r.text, st: r.st, z, w: ww, g }); L.w += g + ww;
+    });
+    lines.push(L);
+    const out = lines.filter(l => l.it.length);
+    if (out.length) out[out.length - 1].last = true;
+    return out;
+  }
+  function draw(L, x, by, w, just) {
+    const gaps = L.it.filter(i => i.g).length;
+    const ex = just && !L.last && !L.forced && gaps ? (w - L.w) / gaps : 0;
+    let cx = x;
+    L.it.forEach(i => { if (i.g) cx += i.g + ex; setF(i.st, i.z); pdf.text(i.text, cx, by); cx += i.w; });
+  }
+  const base = (lh, z) => lh * 0.5 + z * PT * 0.3;
+
+  function para(runs, o = {}) {
+    const { x = M, width = CW, size = 12, justify = true, before = 0, after = 1.2, keep = 0 } = o;
+    const lines = layout(runs, width, size); if (!lines.length) return;
+    const lh = size * PT * 1.35;
+    pdf.setTextColor(0);
+    if (y > M + 0.01) { if (y + before + lh * (keep ? 4 : Math.min(lines.length, 2)) > BOT) newPage(); else y += before; }
+    lines.forEach(l => { if (y + lh > BOT) newPage(); draw(l, x, y + base(lh, size), width, justify); y += lh; });
+    y += after;
+  }
+  function heading(el) {
+    const [size, before, after] = ({ 1: [14, 2, 2], 2: [13, 4, 2], 3: [12.5, 3, 1.6] })[+el.tagName[1]] || [12, 2, 1];
+    const runs = []; collect([...el.childNodes], { b: true }, runs);
+    para(runs, { size, justify: false, before, after, keep: 1 });
+  }
+  function list(el, level, size) {
+    const ordered = el.tagName === 'OL'; let n = parseInt(el.getAttribute('start') || '1', 10);
+    const lh = size * PT * 1.35;
+    [...el.children].forEach(li => {
+      if (li.tagName !== 'LI') return;
+      const isL = c => c.nodeType === 1 && /^(UL|OL)$/.test(c.tagName);
+      const runs = []; collect([...li.childNodes].filter(c => !isL(c)), {}, runs);
+      const ix = M + 4 + level * 7, tx = ix + 6, w = CW - (tx - M), lines = layout(runs, w, size);
+      pdf.setTextColor(0);
+      if (y + Math.min(lines.length, 2) * lh > BOT) newPage();
+      lines.forEach((l, i) => {
+        if (y + lh > BOT) newPage();
+        const by = y + base(lh, size);
+        if (i === 0) { setF({}, size); pdf.text(ordered ? n + '.' : '\u2022', ix, by); }
+        draw(l, tx, by, w, true); y += lh;
+      });
+      y += 0.8;
+      [...li.children].filter(isL).forEach(c => list(c, level + 1, size));
+      n++;
+    });
+    y += 1;
+  }
+  function container(el) {
+    [...el.childNodes].forEach(n => {
+      if (n.nodeType === 3) { if (n.nodeValue.trim()) { const r = []; collect([n], {}, r); para(r); } return; }
+      if (n.nodeType !== 1) return;
+      const t = n.tagName;
+      if (/^H[1-6]$/.test(t)) heading(n);
+      else if (t === 'UL' || t === 'OL') list(n, 0, 12);
+      else if (t === 'DIV' || t === 'BLOCKQUOTE') container(n);
+      else { const r = []; collect([...n.childNodes], {}, r); para(r); }
+    });
+  }
+
+  /* Cover (read from the editable cover so edits are kept) */
+  const wrap = src.querySelector('#cover > div');
+  if (wrap) {
+    let cy = M + 10;
+    for (const n of wrap.children) {
+      if (n.tagName === 'IMG') {
+        let logo = null;
+        try { logo = LOGO_DATA ? await logoJpeg(LOGO_DATA) : await logoJpeg(LOGO_URL, true); } catch (e) { console.warn('Logo skipped'); }
+        if (logo) { const w = 260 * PX, h = w * logo.ratio; pdf.addImage(logo.data, 'JPEG', (PW - w) / 2, cy, w, h, 'logo'); cy += h; }
+      } else {
+        const st = n.style, size = parseFloat(st.fontSize) || 12;
+        cy += (parseFloat(st.marginTop) || 0) * PX;
+        const mw = parseFloat(st.maxWidth) ? parseFloat(st.maxWidth) * PX : CW;
+        pdf.setFont('times', 'bold'); pdf.setFontSize(size); pdf.setTextColor(...parseColor(st.color));
+        const lines = pdf.splitTextToSize(winAnsi(n.textContent.trim()), mw), lh = size * PT * 1.2;
+        lines.forEach((ln, k) => pdf.text(ln, PW / 2, cy + k * lh + size * PT * 0.85, { align: 'center' }));
+        cy += lines.length * lh;
+      }
+    }
+    pdf.setTextColor(0);
+  }
+
+  /* Each case study on a new page */
+  const cases = [...src.querySelectorAll('.cs')];
+  for (let n = 0; n < cases.length; n++) {
+    setStatus(`Building PDF... ${n + 1} of ${cases.length}`);
+    newPage();
+    for (const ch of [...cases[n].children]) {
+      if (ch.tagName === 'H3') heading(ch);
+      else if (ch.classList.contains('ans')) container(ch);
+    }
+  }
+
+  /* Navy border on every page */
+  const g = GAP_PT * PT;
+  for (let i = 1; i <= pdf.internal.getNumberOfPages(); i++) {
+    pdf.setPage(i); pdf.setDrawColor(...NAVY_RGB); pdf.setLineWidth(BORDER_PT * PT);
+    pdf.rect(g, g, PW - 2 * g, PH - 2 * g);
+  }
+  return pdf.output('blob');
+}
+$('pdfBtn').onclick = async () => {
+  $('pdfBtn').disabled = true;
+  try { const out = await buildPdf(); if (out) { saveAs(out, fileBase() + '_Case_Study.pdf'); setStatus(`PDF downloaded (${(out.size / 1048576).toFixed(2)} MB).`); } }
+  catch (e) { console.error(e); setStatus('PDF failed: ' + e.message); }
+  finally { $('pdfBtn').disabled = false; }
+};
+
+/* ---------- Wiring ---------- */
+$('addQ').onclick = () => addQuestion('', true);
+$('sampleBtn').onclick = () => setQuestions(SAMPLE);
+$('clearQ').onclick = () => { $('qList').innerHTML = ''; renumber(); };
+$('genBtn').onclick = generate;
+['college', 'course', 'student', 'branch', 'aat', 'rtype'].forEach(id => $(id).addEventListener('input', updateCover));
+window.addEventListener('DOMContentLoaded', () => {
+  try { $('apiKey').value = localStorage.getItem('groq_api_key') || ''; $('model').value = localStorage.getItem('groq_model') || 'qwen/qwen3.8-27b'; } catch (e) {}
+  setQuestions(SAMPLE); updateCover(); loadLogo();
+});
+</script>
+</body>
+</html>
